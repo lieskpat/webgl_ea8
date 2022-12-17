@@ -2,39 +2,94 @@ var vertexGlsl = `
     attribute vec3 aPosition;
     attribute vec3 aNormal;
 
-    //Projektions-Matrix
     uniform mat4 uPMatrix;
-    //Model-View-Matrix
     uniform mat4 uMVMatrix;
-
     uniform mat3 uNMatrix;
-
-    uniform vec4 uColor;
-
+            
+    //uniform vec4 uColor;
     varying vec4 vColor;
+                        
+    // Ambient light.
+    uniform vec3 ambientLight;
+            
+    // Pointlights.
+    const int MAX_LIGHT_SOURCES = 8;
+    struct LightSource {
+        bool isOn;
+        vec3 position;
+        vec3 color;
+    };
+    uniform LightSource light[MAX_LIGHT_SOURCES];
+            
+    // Material.
+    struct PhongMaterial {
+        vec3 ka;
+        vec3 kd;
+        vec3 ks;
+        float ke; 
+    };
+    uniform PhongMaterial material;
+            
+    // Phong illumination for single light source,
+    // no ambient light.
+    vec3 phong(vec3 p, vec3 n, vec3 v, LightSource l) {
+        vec3 L = l.color;
 
-    void main() {
-        
-        gl_Position = uPMatrix * uMVMatrix * vec4(aPosition, 1.0);
-        vec3 tNormal = uNMatrix * aNormal;
-        //vColor = vec4(tNormal.z, tNormal.z, tNormal.z, 1.0);
-        //vColor = uColor * (vColor + 1.0) / 2.0;
-        vColor = uColor;
+        vec3 s = normalize(l.position - p);
+        vec3 r = reflect(-s, n);
+	
+        float sn = max( dot(s,n), 0.0);
+        float rv = max( dot(r,v), 0.0);
+				
+        vec3 diffuse = material.kd * L * sn;
+					
+        vec3 specular = material.ks * L * pow(rv, material.ke);
 
+        return diffuse + specular;			       
     }
+            
+    // Phong illumination for multiple light sources
+    vec3 phong(vec3 p, vec3 n, vec3 v) {
+            
+        // Calculate ambient light.
+        vec3 result = material.ka * ambientLight;
+                
+        // Add light from all light sources.
+        for(int j=0; j < MAX_LIGHT_SOURCES; j++){
+            if(light[j].isOn){
+                result += phong(p, n, v, light[j]);
+            }
+        }
+        return result;
+    }
+            
+    void main(){
+        // Calculate vertex position in eye coordinates. 
+        vec4 tPosition = uMVMatrix * vec4(aPosition, 1.0);
+        // Calculate projektion.
+        gl_Position = uPMatrix * tPosition;
+            
+        vec3 tNormal = normalize(uNMatrix * aNormal);
+                
+        // Calculate view vector.
+        vec3 v = normalize(-tPosition.xyz);    
+                                
+        vColor = vec4( phong(tPosition.xyz, tNormal, v), 1.0);
+    }
+
 `;
 
 //Fragment Shader dienen unter anderem der Einfärbung
 var fragmentGlsl = `
-    precision mediump float;
-    varying vec4 vColor;
 
-    void main(){
-        //vierdimensionaler Vektor vec4(1, 1, 1, 1, 1)
-        //RGB + Alpha Kanal
-        //vColor = vec4(gl_FragCoord.z, gl_FragCoord.z, gl_FragCoord.z, 1);
-        gl_FragColor = vec4(gl_FragCoord.z, gl_FragCoord.z, gl_FragCoord.z, 1);
+    precision mediump float;
+            
+    varying vec4 vColor;
+            
+    void main() {
+        gl_FragColor = vColor;
     }
+
 `;
 
 /**
@@ -66,7 +121,7 @@ if (!Math.hypot) Math.hypot = function () {
  * @returns {mat3} a new 3x3 matrix
  */
 
-function create$2() {
+function create$3() {
   var out = new ARRAY_TYPE(9);
 
   if (ARRAY_TYPE != Float32Array) {
@@ -152,7 +207,7 @@ function normalFromMat4(out, a) {
  * @returns {mat4} a new 4x4 matrix
  */
 
-function create$1() {
+function create$2() {
   var out = new ARRAY_TYPE(16);
 
   if (ARRAY_TYPE != Float32Array) {
@@ -704,7 +759,7 @@ function lookAt(out, eye, center, up) {
  * @returns {vec3} a new 3D vector
  */
 
-function create() {
+function create$1() {
   var out = new ARRAY_TYPE(3);
 
   if (ARRAY_TYPE != Float32Array) {
@@ -753,7 +808,7 @@ function normalize(out, a) {
  */
 
 (function () {
-  var vec = create();
+  var vec = create$1();
   return function (a, stride, offset, count, fn, arg) {
     var i, l;
 
@@ -779,6 +834,97 @@ function normalize(out, a) {
       a[i] = vec[0];
       a[i + 1] = vec[1];
       a[i + 2] = vec[2];
+    }
+
+    return a;
+  };
+})();
+
+/**
+ * 4 Dimensional Vector
+ * @module vec4
+ */
+
+/**
+ * Creates a new, empty vec4
+ *
+ * @returns {vec4} a new 4D vector
+ */
+
+function create() {
+  var out = new ARRAY_TYPE(4);
+
+  if (ARRAY_TYPE != Float32Array) {
+    out[0] = 0;
+    out[1] = 0;
+    out[2] = 0;
+    out[3] = 0;
+  }
+
+  return out;
+}
+/**
+ * Transforms the vec4 with a mat4.
+ *
+ * @param {vec4} out the receiving vector
+ * @param {ReadonlyVec4} a the vector to transform
+ * @param {ReadonlyMat4} m matrix to transform with
+ * @returns {vec4} out
+ */
+
+function transformMat4(out, a, m) {
+  var x = a[0],
+      y = a[1],
+      z = a[2],
+      w = a[3];
+  out[0] = m[0] * x + m[4] * y + m[8] * z + m[12] * w;
+  out[1] = m[1] * x + m[5] * y + m[9] * z + m[13] * w;
+  out[2] = m[2] * x + m[6] * y + m[10] * z + m[14] * w;
+  out[3] = m[3] * x + m[7] * y + m[11] * z + m[15] * w;
+  return out;
+}
+/**
+ * Perform some operation over an array of vec4s.
+ *
+ * @param {Array} a the array of vectors to iterate over
+ * @param {Number} stride Number of elements between the start of each vec4. If 0 assumes tightly packed
+ * @param {Number} offset Number of elements to skip at the beginning of the array
+ * @param {Number} count Number of vec4s to iterate over. If 0 iterates over entire array
+ * @param {Function} fn Function to call for each vector in the array
+ * @param {Object} [arg] additional argument to pass to fn
+ * @returns {Array} a
+ * @function
+ */
+
+(function () {
+  var vec = create();
+  return function (a, stride, offset, count, fn, arg) {
+    var i, l;
+
+    if (!stride) {
+      stride = 4;
+    }
+
+    if (!offset) {
+      offset = 0;
+    }
+
+    if (count) {
+      l = Math.min(count * stride + offset, a.length);
+    } else {
+      l = a.length;
+    }
+
+    for (i = offset; i < l; i += stride) {
+      vec[0] = a[i];
+      vec[1] = a[i + 1];
+      vec[2] = a[i + 2];
+      vec[3] = a[i + 3];
+      fn(vec, vec, arg);
+      a[i] = vec[0];
+      a[i + 1] = vec[1];
+      a[i + 2] = vec[2];
+      a[i + 3] = vec[3];
     }
 
     return a;
@@ -1161,8 +1307,6 @@ let prog;
 // Array of model objects.
 const models = [];
 
-let interactiveModel;
-
 const camera = {
     // Initial position of the camera.
     eye: [0, 1, 4],
@@ -1180,10 +1324,10 @@ const camera = {
     lrtb: 2.0,
     // View matrix.
     // creates identy matrix
-    vMatrix: create$1(),
+    vMatrix: create$2(),
     // Projection matrix.
     // creates identy matrix
-    pMatrix: create$1(),
+    pMatrix: create$2(),
     // Projection types: ortho, perspective, frustum.
     //projectionType: "ortho",
     projectionType: "perspective",
@@ -1192,6 +1336,19 @@ const camera = {
     zAngle: 0,
     // Distance in XZ-Plane from center when orbiting.
     distance: 4,
+};
+
+// Objekt with light sources characteristics in the scene.
+var illumination = {
+    ambientLight: [0.5, 0.5, 0.5],
+    light: [
+        {
+            isOn: true,
+            position: [3, 1, 3],
+            color: [1, 1, 1],
+        },
+        { isOn: true, position: [-3, 1, -3], color: [1, 1, 1] },
+    ],
 };
 
 function start() {
@@ -1286,55 +1443,97 @@ function initUniforms() {
     prog.colorUniform = gl.getUniformLocation(prog, "uColor");
 
     prog.nMatrixUniform = gl.getUniformLocation(prog, "uNMatrix");
+
+    // Light.
+    prog.ambientLightUniform = gl.getUniformLocation(prog, "ambientLight");
+    // Array for light sources uniforms.
+    prog.lightUniform = [];
+    // Loop over light sources.
+    for (var j = 0; j < illumination.light.length; j++) {
+        var lightNb = "light[" + j + "]";
+        // Store one object for every light source.
+        var l = {};
+        l.isOn = gl.getUniformLocation(prog, lightNb + ".isOn");
+        l.position = gl.getUniformLocation(prog, lightNb + ".position");
+        l.color = gl.getUniformLocation(prog, lightNb + ".color");
+        prog.lightUniform[j] = l;
+    }
+
+    // Material.
+    prog.materialKaUniform = gl.getUniformLocation(prog, "material.ka");
+    prog.materialKdUniform = gl.getUniformLocation(prog, "material.kd");
+    prog.materialKsUniform = gl.getUniformLocation(prog, "material.ks");
+    prog.materialKeUniform = gl.getUniformLocation(prog, "material.ke");
+}
+
+/**
+ * @paramter material : objekt with optional ka, kd, ks, ke.
+ * @retrun material : objekt with ka, kd, ks, ke.
+ */
+function createPhongMaterial(material) {
+    material = material || {};
+    // Set some default values,
+    // if not defined in material paramter.
+    material.ka = material.ka || [0.3, 0.3, 0.3];
+    material.kd = material.kd || [0.6, 0.6, 0.6];
+    material.ks = material.ks || [0.8, 0.8, 0.8];
+    material.ke = material.ke || 10;
+
+    return material;
 }
 
 function initModels() {
     // fill-style
     //const fs = "fillwireframe";
     const fs = "fill";
-    //createModel("torus", fs, [0.15, -0.3, -1.5], [0, 0, 0], [1, 1, 1]);
-    createModel(
-        "plane",
-        "wireframe",
-        [1.0, 1.0, 1.0, 1.0],
-        [0, -0.8, 0],
-        [0, 0, 0],
-        [1, 1, 1]
-    );
+
+    // Create some default material.
+    createPhongMaterial();
+    var mRed = createPhongMaterial({ kd: [1, 0, 0] });
+    var mGreen = createPhongMaterial({ kd: [0, 1, 0] });
+    var mBlue = createPhongMaterial({ kd: [0, 0, 1] });
+    var mWhite = createPhongMaterial({
+        ka: [1, 1, 1],
+        kd: [0.5, 0.5, 0.5],
+        ks: [0, 0, 0],
+    });
 
     createModel(
-        "sphere",
+        "torus",
         fs,
-        [0, 0, 0, 1],
-        [0, 0, 0],
-        [0, 0, 0],
-        [1.0, 1.0, 1.0]
-    );
-    createModel(
-        "sphere",
-        fs,
-        [0, 0, 0, 1],
-        [0, 0.5, 0.5],
-        [0, 0, 0],
-        [1.0, 1.0, 1.0]
-    );
-    createModel(
-        "sphere",
-        fs,
-        [0, 0, 0, 1],
-        [0, 1.0, 1.0],
-        [0, 0, 0],
-        [1.0, 1.0, 1.0]
+        [1, 1, 1, 1],
+        [0, 0.75, 0],
+        [0, 0, 0, 0],
+        [1, 1, 1, 1],
+        mRed
     );
     createModel(
         "sphere",
         fs,
         [1, 1, 1, 1],
-        [0, 1.0, 1.5],
-        [0, 0, 0],
-        [1.0, 1.0, 1.0]
+        [-1.25, 0.5, 0],
+        [0, 0, 0, 0],
+        [0.5, 0.5, 0.5],
+        mGreen
     );
-    interactiveModel = models[0];
+    createModel(
+        "sphere",
+        fs,
+        [1, 1, 1, 1],
+        [1.25, 0.5, 0],
+        [0, 0, 0, 0],
+        [0.5, 0.5, 0.5],
+        mBlue
+    );
+    createModel(
+        "plane",
+        fs,
+        [1, 1, 1, 1],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [1, 1, 1, 1],
+        mWhite
+    );
 }
 
 /**
@@ -1343,10 +1542,19 @@ function initModels() {
  * @parameter geometryname: string with name of geometry.
  * @parameter fillstyle: wireframe, fill, fillwireframe.
  */
-function createModel(geometryname, fillstyle, color, translate, rotate, scale) {
+function createModel(
+    geometryname,
+    fillstyle,
+    color,
+    translate,
+    rotate,
+    scale,
+    material
+) {
     const model = {};
     model.fillstyle = fillstyle;
     model.color = color;
+    model.material = material;
     initDataAndBuffers(model, geometryname);
     initTransformations(model, translate, rotate, scale);
     models.push(model);
@@ -1357,11 +1565,11 @@ function initTransformations(model, translate, rotate, scale) {
     model.rotate = rotate;
     model.scale = scale;
     // mMatrix - ist Model Matrix
-    model.mMatrix = create$1();
+    model.mMatrix = create$2();
     //mvMatrix - ist ModelView Matrix
-    model.mvMatrix = create$1();
+    model.mvMatrix = create$2();
 
-    model.nMatrix = create$2();
+    model.nMatrix = create$3();
 }
 
 function updateTransformations(model) {
@@ -1437,6 +1645,7 @@ function initDataAndBuffers(model, geometryname) {
 function initEventHandler() {
     const deltaRotate = Math.PI / 36;
     const deltaTranslate = 0.05;
+    var currentLight = ((2 * Math.PI) / 60) * 7;
     window.onkeydown = function (evt) {
         const sign = evt.shiftKey ? 1 : -1;
         const key = evt.which ? evt.which : evt.keyCode;
@@ -1444,35 +1653,33 @@ function initEventHandler() {
 
         // Change projection of scene.
         switch (c) {
-            //case "O":
-            //camera.projectionType = "ortho";
-            //camera.lrtb = 2;
-            //break;
-            //case "P":
-            //camera.projectionType = "perspective";
-            //break;
             case "F":
                 //camera.projectionType = "frustum";
                 //camera.lrtb = 1.2;
                 break;
             case "%":
                 camera.zAngle -= deltaRotate;
-                interactiveModel.rotate[1] -= deltaRotate;
                 break;
             case "'":
                 camera.zAngle += deltaRotate;
-                interactiveModel.rotate[1] += deltaRotate;
                 break;
-            //case "N":
-            //camera.distance += sign * deltaTranslate;
-            //case "H":
-            //camera.eye[y] += -sign * deltaTranslate;
-            //break;
             case "N":
                 // Camera near plane dimensions.
                 camera.lrtb += sign * 0.1;
                 camera.distance += sign * deltaTranslate;
                 break;
+            case "L":
+                currentLight += (2 * Math.PI) / 60;
+
+                illumination.light[0].position[0] =
+                    Math.cos(currentLight) * 2.3;
+                illumination.light[0].position[2] =
+                    Math.sin(currentLight) * 2.3;
+
+                illumination.light[1].position[0] =
+                    Math.cos(currentLight) * 2.3;
+                illumination.light[1].position[2] =
+                    Math.sin(currentLight) * 2.3;
         }
 
         // Render the scene again on any key pressed.
@@ -1501,6 +1708,25 @@ function render() {
     //eye(0, 1, 4), center(0, 0, 0), up(0, 1, 0)
     lookAt(camera.vMatrix, camera.eye, camera.center, camera.up);
 
+    // NEW
+    // Set light uniforms.
+    gl.uniform3fv(prog.ambientLightUniform, illumination.ambientLight);
+    // Loop over light sources.
+    for (var j = 0; j < illumination.light.length; j++) {
+        // bool is transferred as integer.
+        gl.uniform1i(prog.lightUniform[j].isOn, illumination.light[j].isOn);
+        // Tranform light postion in eye coordinates.
+        // Copy current light position into a new array.
+        var lightPos = [].concat(illumination.light[j].position);
+        // Add homogenious coordinate for transformation.
+        lightPos.push(1.0);
+        transformMat4(lightPos, lightPos, camera.vMatrix);
+        // Remove homogenious coordinate.
+        lightPos.pop();
+        gl.uniform3fv(prog.lightUniform[j].position, lightPos);
+        gl.uniform3fv(prog.lightUniform[j].color, illumination.light[j].color);
+    }
+
     // Loop over models.
     for (let i = 0; i < models.length; i++) {
         updateTransformations(models[i]);
@@ -1523,6 +1749,14 @@ function render() {
         gl.uniformMatrix4fv(prog.mvMatrixUniform, false, models[i].mvMatrix);
         gl.uniform4fv(prog.colorUniform, models[i].color);
         gl.uniformMatrix3fv(prog.nMatrixUniform, false, models[i].nMatrix);
+
+        // NEW
+        // Material.
+        gl.uniform3fv(prog.materialKaUniform, models[i].material.ka);
+        gl.uniform3fv(prog.materialKdUniform, models[i].material.kd);
+        gl.uniform3fv(prog.materialKsUniform, models[i].material.ks);
+        gl.uniform1f(prog.materialKeUniform, models[i].material.ke);
+
         draw(models[i]);
     }
 }

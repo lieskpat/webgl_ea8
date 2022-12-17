@@ -1,4 +1,4 @@
-import { mat4, mat3 } from "gl-matrix";
+import { mat4, mat3, vec4 } from "gl-matrix";
 import vertexGlsl from "../shader/vertexShader_shader_language.js";
 import fragmentGlsl from "../shader/fragmentShader_shader_language.js";
 import { geometryModelDatas } from "./vertexData.js";
@@ -44,6 +44,19 @@ const camera = {
     zAngle: 0,
     // Distance in XZ-Plane from center when orbiting.
     distance: 4,
+};
+
+// Objekt with light sources characteristics in the scene.
+var illumination = {
+    ambientLight: [0.5, 0.5, 0.5],
+    light: [
+        {
+            isOn: true,
+            position: [3, 1, 3],
+            color: [1, 1, 1],
+        },
+        { isOn: true, position: [-3, 1, -3], color: [1, 1, 1] },
+    ],
 };
 
 function start() {
@@ -138,54 +151,98 @@ function initUniforms() {
     prog.colorUniform = gl.getUniformLocation(prog, "uColor");
 
     prog.nMatrixUniform = gl.getUniformLocation(prog, "uNMatrix");
+
+    // Light.
+    prog.ambientLightUniform = gl.getUniformLocation(prog, "ambientLight");
+    // Array for light sources uniforms.
+    prog.lightUniform = [];
+    // Loop over light sources.
+    for (var j = 0; j < illumination.light.length; j++) {
+        var lightNb = "light[" + j + "]";
+        // Store one object for every light source.
+        var l = {};
+        l.isOn = gl.getUniformLocation(prog, lightNb + ".isOn");
+        l.position = gl.getUniformLocation(prog, lightNb + ".position");
+        l.color = gl.getUniformLocation(prog, lightNb + ".color");
+        prog.lightUniform[j] = l;
+    }
+
+    // Material.
+    prog.materialKaUniform = gl.getUniformLocation(prog, "material.ka");
+    prog.materialKdUniform = gl.getUniformLocation(prog, "material.kd");
+    prog.materialKsUniform = gl.getUniformLocation(prog, "material.ks");
+    prog.materialKeUniform = gl.getUniformLocation(prog, "material.ke");
+}
+
+/**
+ * @paramter material : objekt with optional ka, kd, ks, ke.
+ * @retrun material : objekt with ka, kd, ks, ke.
+ */
+function createPhongMaterial(material) {
+    material = material || {};
+    // Set some default values,
+    // if not defined in material paramter.
+    material.ka = material.ka || [0.3, 0.3, 0.3];
+    material.kd = material.kd || [0.6, 0.6, 0.6];
+    material.ks = material.ks || [0.8, 0.8, 0.8];
+    material.ke = material.ke || 10;
+
+    return material;
 }
 
 function initModels() {
     // fill-style
     //const fs = "fillwireframe";
     const fs = "fill";
-    //createModel("torus", fs, [0.15, -0.3, -1.5], [0, 0, 0], [1, 1, 1]);
-    createModel(
-        "plane",
-        "wireframe",
-        [1.0, 1.0, 1.0, 1.0],
-        [0, -0.8, 0],
-        [0, 0, 0],
-        [1, 1, 1]
-    );
+
+    // Create some default material.
+    var mDefault = createPhongMaterial();
+    var mRed = createPhongMaterial({ kd: [1, 0, 0] });
+    var mGreen = createPhongMaterial({ kd: [0, 1, 0] });
+    var mBlue = createPhongMaterial({ kd: [0, 0, 1] });
+    var mWhite = createPhongMaterial({
+        ka: [1, 1, 1],
+        kd: [0.5, 0.5, 0.5],
+        ks: [0, 0, 0],
+    });
 
     createModel(
-        "sphere",
+        "torus",
         fs,
-        [0, 0, 0, 1],
-        [0, 0, 0],
-        [0, 0, 0],
-        [1.0, 1.0, 1.0]
-    );
-    createModel(
-        "sphere",
-        fs,
-        [0, 0, 0, 1],
-        [0, 0.5, 0.5],
-        [0, 0, 0],
-        [1.0, 1.0, 1.0]
-    );
-    createModel(
-        "sphere",
-        fs,
-        [0, 0, 0, 1],
-        [0, 1.0, 1.0],
-        [0, 0, 0],
-        [1.0, 1.0, 1.0]
+        [1, 1, 1, 1],
+        [0, 0.75, 0],
+        [0, 0, 0, 0],
+        [1, 1, 1, 1],
+        mRed
     );
     createModel(
         "sphere",
         fs,
         [1, 1, 1, 1],
-        [0, 1.0, 1.5],
-        [0, 0, 0],
-        [1.0, 1.0, 1.0]
+        [-1.25, 0.5, 0],
+        [0, 0, 0, 0],
+        [0.5, 0.5, 0.5],
+        mGreen
     );
+    createModel(
+        "sphere",
+        fs,
+        [1, 1, 1, 1],
+        [1.25, 0.5, 0],
+        [0, 0, 0, 0],
+        [0.5, 0.5, 0.5],
+        mBlue
+    );
+    createModel(
+        "plane",
+        fs,
+        [1, 1, 1, 1],
+        [0, 0, 0, 0],
+        [0, 0, 0, 0],
+        [1, 1, 1, 1],
+        mWhite
+    );
+
     interactiveModel = models[0];
 }
 
@@ -195,10 +252,19 @@ function initModels() {
  * @parameter geometryname: string with name of geometry.
  * @parameter fillstyle: wireframe, fill, fillwireframe.
  */
-function createModel(geometryname, fillstyle, color, translate, rotate, scale) {
+function createModel(
+    geometryname,
+    fillstyle,
+    color,
+    translate,
+    rotate,
+    scale,
+    material
+) {
     const model = {};
     model.fillstyle = fillstyle;
     model.color = color;
+    model.material = material;
     initDataAndBuffers(model, geometryname);
     initTransformations(model, translate, rotate, scale);
     models.push(model);
@@ -289,6 +355,7 @@ function initDataAndBuffers(model, geometryname) {
 function initEventHandler() {
     const deltaRotate = Math.PI / 36;
     const deltaTranslate = 0.05;
+    var currentLight = ((2 * Math.PI) / 60) * 7;
     const x = 0,
         y = 1,
         z = 2;
@@ -299,75 +366,33 @@ function initEventHandler() {
 
         // Change projection of scene.
         switch (c) {
-            //case "O":
-            //camera.projectionType = "ortho";
-            //camera.lrtb = 2;
-            //break;
-            //case "P":
-            //camera.projectionType = "perspective";
-            //break;
             case "F":
                 //camera.projectionType = "frustum";
                 //camera.lrtb = 1.2;
                 break;
             case "%":
                 camera.zAngle -= deltaRotate;
-                interactiveModel.rotate[1] -= deltaRotate;
                 break;
             case "'":
                 camera.zAngle += deltaRotate;
-                interactiveModel.rotate[1] += deltaRotate;
                 break;
-            //case "N":
-            //camera.distance += sign * deltaTranslate;
-            //case "H":
-            //camera.eye[y] += -sign * deltaTranslate;
-            //break;
             case "N":
                 // Camera near plane dimensions.
                 camera.lrtb += sign * 0.1;
                 camera.distance += sign * deltaTranslate;
                 break;
-            //            case "D":
-            //                camera.eye[x] += deltaTranslate;
-            //                camera.center[x] += deltaTranslate;
-            //                break;
-            //
-            //            case "A":
-            //                camera.eye[x] -= deltaTranslate;
-            //                camera.center[x] -= deltaTranslate;
-            //                break;
+            case "L":
+                currentLight += (2 * Math.PI) / 60;
 
-            //            case "W":
-            //                camera.eye[y] += deltaTranslate;
-            //                camera.center[y] += deltaTranslate;
-            //                break;
-            //
-            //            case "S":
-            //                camera.eye[y] -= deltaTranslate;
-            //                camera.center[y] -= deltaTranslate;
-            //                break;
-            //
-            //            case "X":
-            //                interactiveModel.rotate[0] += sign * deltaRotate;
-            //                break;
-            //
-            //            case "Y":
-            //                interactiveModel.rotate[1] += sign * deltaRotate;
-            //                break;
+                illumination.light[0].position[0] =
+                    Math.cos(currentLight) * 2.3;
+                illumination.light[0].position[2] =
+                    Math.sin(currentLight) * 2.3;
 
-            //            case "Z":
-            //                interactiveModel.rotate[2] += sign * deltaRotate;
-            //                break;
-            //            case "K":
-            //interactiveModel = models[0];
-            //interactiveModel.translate[2] = -1.5 * Math.cos(camera.zAngle);
-            //interactiveModel.translate[0] = -1.5 * Math.sin(camera.zAngle);
-            //interactiveModel = models[1];
-            //camera.zAngle += deltaRotate;
-            //don't rotate the pane
-            //interactiveModel.rotate[1] += deltaRotate;
-            //break;
+                illumination.light[1].position[0] =
+                    Math.cos(currentLight) * 2.3;
+                illumination.light[1].position[2] =
+                    Math.sin(currentLight) * 2.3;
 
             default:
         }
@@ -398,6 +423,25 @@ function render() {
     //eye(0, 1, 4), center(0, 0, 0), up(0, 1, 0)
     mat4.lookAt(camera.vMatrix, camera.eye, camera.center, camera.up);
 
+    // NEW
+    // Set light uniforms.
+    gl.uniform3fv(prog.ambientLightUniform, illumination.ambientLight);
+    // Loop over light sources.
+    for (var j = 0; j < illumination.light.length; j++) {
+        // bool is transferred as integer.
+        gl.uniform1i(prog.lightUniform[j].isOn, illumination.light[j].isOn);
+        // Tranform light postion in eye coordinates.
+        // Copy current light position into a new array.
+        var lightPos = [].concat(illumination.light[j].position);
+        // Add homogenious coordinate for transformation.
+        lightPos.push(1.0);
+        vec4.transformMat4(lightPos, lightPos, camera.vMatrix);
+        // Remove homogenious coordinate.
+        lightPos.pop();
+        gl.uniform3fv(prog.lightUniform[j].position, lightPos);
+        gl.uniform3fv(prog.lightUniform[j].color, illumination.light[j].color);
+    }
+
     // Loop over models.
     for (let i = 0; i < models.length; i++) {
         updateTransformations(models[i]);
@@ -420,6 +464,14 @@ function render() {
         gl.uniformMatrix4fv(prog.mvMatrixUniform, false, models[i].mvMatrix);
         gl.uniform4fv(prog.colorUniform, models[i].color);
         gl.uniformMatrix3fv(prog.nMatrixUniform, false, models[i].nMatrix);
+
+        // NEW
+        // Material.
+        gl.uniform3fv(prog.materialKaUniform, models[i].material.ka);
+        gl.uniform3fv(prog.materialKdUniform, models[i].material.kd);
+        gl.uniform3fv(prog.materialKsUniform, models[i].material.ks);
+        gl.uniform1f(prog.materialKeUniform, models[i].material.ke);
+
         draw(models[i]);
     }
 }
