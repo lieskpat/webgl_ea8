@@ -6,6 +6,9 @@ import { geometryModelDatas } from "./vertexData.js";
 //const gl = initContext("gl_context");
 let gl;
 
+let lightsRun = false;
+let currentLightPoint = ((2 * Math.PI) / 60) * 7;
+
 // The shader program object is also used to
 // store attribute and uniform locations.
 let prog;
@@ -52,10 +55,24 @@ var illumination = {
     light: [
         {
             isOn: true,
-            position: [3, 1, 3],
+            //position: [3, 1, 3],
+            position: [
+                Math.cos(((2 * Math.PI) / 60) * 7) * 2.3,
+                1,
+                Math.sin(((2 * Math.PI) / 60) * 7) * 2.3,
+            ],
             color: [1, 1, 1],
         },
-        { isOn: true, position: [-3, 1, -3], color: [1, 1, 1] },
+        {
+            isOn: true,
+            //position: [-3, 1, -3],
+            position: [
+                Math.cos(((2 * Math.PI) / 60) * 7) * 2.3,
+                1,
+                Math.sin(((2 * Math.PI) / 60) * 7) * 2.3,
+            ],
+            color: [1, 1, 1],
+        },
     ],
 };
 
@@ -352,10 +369,20 @@ function initDataAndBuffers(model, geometryname) {
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
 }
 
+//animate spotlights around a circle
+function runLights(fn) {
+    if (lightsRun == false) {
+        intervalStart = setInterval(fn, 120);
+        lightsRun = true;
+    } else {
+        lightsRun = false;
+        clearInterval(intervalStart);
+    }
+}
+
 function initEventHandler() {
     const deltaRotate = Math.PI / 36;
     const deltaTranslate = 0.05;
-    var currentLight = ((2 * Math.PI) / 60) * 7;
     const x = 0,
         y = 1,
         z = 2;
@@ -382,18 +409,21 @@ function initEventHandler() {
                 camera.distance += sign * deltaTranslate;
                 break;
             case "L":
-                currentLight += (2 * Math.PI) / 60;
+                runLights(function () {
+                    currentLightPoint += (2 * Math.PI) / 60;
 
-                illumination.light[0].position[0] =
-                    Math.cos(currentLight) * 2.3;
-                illumination.light[0].position[2] =
-                    Math.sin(currentLight) * 2.3;
+                    illumination.light[0].position[0] =
+                        Math.cos(currentLightPoint) * 2.3;
+                    illumination.light[0].position[2] =
+                        Math.sin(currentLightPoint) * 2.3;
 
-                illumination.light[1].position[0] =
-                    Math.cos(currentLight) * 2.3;
-                illumination.light[1].position[2] =
-                    Math.sin(currentLight) * 2.3;
+                    illumination.light[1].position[0] =
+                        Math.cos(currentLightPoint + Math.PI) * 2.3;
+                    illumination.light[1].position[2] =
+                        Math.sin(currentLightPoint + Math.PI) * 2.3;
 
+                    render();
+                });
             default:
         }
 
