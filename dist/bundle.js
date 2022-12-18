@@ -1359,9 +1359,9 @@ var illumination = {
             isOn: true,
             //position: [-3, 1, -3],
             position: [
-                Math.cos(((2 * Math.PI) / 60) * 7) * 2.3,
+                Math.cos(((2 * Math.PI) / 60) * 7 + Math.PI) * 2.3,
                 1,
-                Math.sin(((2 * Math.PI) / 60) * 7) * 2.3,
+                Math.sin(((2 * Math.PI) / 60) * 7 + Math.PI) * 2.3,
             ],
             color: [1, 1, 1],
         },
